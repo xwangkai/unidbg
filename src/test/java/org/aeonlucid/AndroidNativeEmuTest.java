@@ -1,21 +1,21 @@
 package org.aeonlucid;
 
-import cn.banny.unidbg.Emulator;
-import cn.banny.unidbg.android.EmulatorTest;
-import cn.banny.unidbg.LibraryResolver;
-import cn.banny.unidbg.Module;
-import cn.banny.unidbg.linux.android.AndroidARMEmulator;
-import cn.banny.unidbg.linux.android.AndroidResolver;
+import com.github.unidbg.AndroidEmulator;
+import com.github.unidbg.LibraryResolver;
+import com.github.unidbg.Module;
+import com.github.unidbg.android.EmulatorTest;
+import com.github.unidbg.linux.android.AndroidARMEmulator;
+import com.github.unidbg.linux.android.AndroidResolver;
 import unicorn.ArmConst;
 import unicorn.Unicorn;
 
 import java.io.File;
 
-public class AndroidNativeEmuTest extends EmulatorTest {
+public class AndroidNativeEmuTest extends EmulatorTest<AndroidEmulator> {
 
     @Override
     protected LibraryResolver createLibraryResolver() {
-        return new AndroidResolver(19, "libc.so", "libdl.so");
+        return new AndroidResolver(23, "libc.so", "libdl.so");
     }
 
     public void testExample() throws Exception {
@@ -44,7 +44,7 @@ public class AndroidNativeEmuTest extends EmulatorTest {
     }
 
     @Override
-    protected Emulator createARMEmulator() {
+    protected AndroidEmulator createARMEmulator() {
         return new AndroidARMEmulator(getClass().getSimpleName());
     }
 }

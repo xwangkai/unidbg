@@ -1,15 +1,18 @@
 package org.telegram.messenger;
 
-import cn.banny.auxiliary.Inspector;
-import cn.banny.unidbg.LibraryResolver;
-import cn.banny.unidbg.arm.ARMEmulator;
-import cn.banny.unidbg.linux.android.AndroidARM64Emulator;
-import cn.banny.unidbg.linux.android.AndroidResolver;
-import cn.banny.unidbg.linux.android.dvm.array.ByteArray;
-import cn.banny.unidbg.linux.android.dvm.DalvikModule;
-import cn.banny.unidbg.linux.android.dvm.DvmClass;
-import cn.banny.unidbg.linux.android.dvm.VM;
-import cn.banny.unidbg.memory.Memory;
+import com.github.unidbg.AndroidEmulator;
+import com.github.unidbg.LibraryResolver;
+import com.github.unidbg.Module;
+import com.github.unidbg.linux.android.AndroidARM64Emulator;
+import com.github.unidbg.linux.android.AndroidResolver;
+import com.github.unidbg.linux.android.dvm.DalvikModule;
+import com.github.unidbg.linux.android.dvm.DvmClass;
+import com.github.unidbg.linux.android.dvm.VM;
+import com.github.unidbg.linux.android.dvm.array.ByteArray;
+import com.github.unidbg.memory.Memory;
+import com.github.unidbg.utils.Inspector;
+import com.github.unidbg.virtualmodule.android.AndroidModule;
+import com.github.unidbg.virtualmodule.android.JniGraphics;
 
 import java.io.File;
 import java.io.IOException;
@@ -20,11 +23,11 @@ public class Utilities64 {
         return new AndroidResolver(23);
     }
 
-    private static ARMEmulator createARMEmulator() {
+    private static AndroidEmulator createARMEmulator() {
         return new AndroidARM64Emulator("org.telegram.messenger");
     }
 
-    private final ARMEmulator emulator;
+    private final AndroidEmulator emulator;
     private final VM vm;
 
     private final DvmClass Utilities;
@@ -36,6 +39,11 @@ public class Utilities64 {
         memory.setCallInitFunction();
 
         vm = emulator.createDalvikVM(null);
+        Module module = new JniGraphics(emulator, vm).register(memory);
+        assert module != null;
+        new AndroidModule(emulator, vm).register(memory);
+
+        vm.setVerbose(true);
         DalvikModule dm = vm.loadLibrary(new File("src/test/resources/example_binaries/arm64-v8a/libtmessages.29.so"), false);
         dm.callJNI_OnLoad(emulator);
 

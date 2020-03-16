@@ -1,27 +1,25 @@
 package com.sun.jna;
 
-import cn.banny.auxiliary.Inspector;
-import cn.banny.unidbg.Emulator;
-import cn.banny.unidbg.LibraryResolver;
-import cn.banny.unidbg.Module;
-import cn.banny.unidbg.Symbol;
-import cn.banny.unidbg.arm.ARMEmulator;
-import cn.banny.unidbg.arm.HookStatus;
-import cn.banny.unidbg.arm.context.RegisterContext;
-import cn.banny.unidbg.hook.ReplaceCallback;
-import cn.banny.unidbg.hook.hookzz.HookEntryInfo;
-import cn.banny.unidbg.hook.hookzz.HookZz;
-import cn.banny.unidbg.hook.hookzz.IHookZz;
-import cn.banny.unidbg.hook.hookzz.WrapCallback;
-import cn.banny.unidbg.hook.whale.IWhale;
-import cn.banny.unidbg.hook.whale.Whale;
-import cn.banny.unidbg.hook.xhook.IxHook;
-import cn.banny.unidbg.linux.android.AndroidARMEmulator;
-import cn.banny.unidbg.linux.android.AndroidResolver;
-import cn.banny.unidbg.linux.android.XHookImpl;
-import cn.banny.unidbg.linux.android.dvm.*;
-import cn.banny.unidbg.memory.Memory;
-import cn.banny.unidbg.pointer.UnicornPointer;
+import com.github.unidbg.*;
+import com.github.unidbg.arm.HookStatus;
+import com.github.unidbg.arm.context.RegisterContext;
+import com.github.unidbg.hook.HookContext;
+import com.github.unidbg.hook.ReplaceCallback;
+import com.github.unidbg.hook.hookzz.HookEntryInfo;
+import com.github.unidbg.hook.hookzz.HookZz;
+import com.github.unidbg.hook.hookzz.IHookZz;
+import com.github.unidbg.hook.hookzz.WrapCallback;
+import com.github.unidbg.hook.whale.IWhale;
+import com.github.unidbg.hook.whale.Whale;
+import com.github.unidbg.hook.xhook.IxHook;
+import com.github.unidbg.linux.android.AndroidARMEmulator;
+import com.github.unidbg.linux.android.AndroidResolver;
+import com.github.unidbg.linux.android.XHookImpl;
+import com.github.unidbg.linux.android.dvm.*;
+import com.github.unidbg.memory.Memory;
+import com.github.unidbg.memory.MemoryBlock;
+import com.github.unidbg.pointer.UnicornPointer;
+import com.github.unidbg.utils.Inspector;
 
 import java.io.File;
 import java.io.IOException;
@@ -32,11 +30,11 @@ public class JniDispatch32 extends AbstractJni {
         return new AndroidResolver(23);
     }
 
-    private static ARMEmulator createARMEmulator() {
+    private static AndroidEmulator createARMEmulator() {
         return new AndroidARMEmulator("com.sun.jna");
     }
 
-    private final ARMEmulator emulator;
+    private final AndroidEmulator emulator;
     private final VM vm;
     private final Module module;
 
@@ -50,11 +48,17 @@ public class JniDispatch32 extends AbstractJni {
 
         vm = emulator.createDalvikVM(null);
         vm.setJni(this);
+        vm.setVerbose(true);
         DalvikModule dm = vm.loadLibrary(new File("src/test/resources/example_binaries/armeabi-v7a/libjnidispatch.so"), false);
         dm.callJNI_OnLoad(emulator);
         module = dm.getModule();
 
         Native = vm.resolveClass("com/sun/jna/Native");
+
+        Symbol __system_property_get = module.findSymbolByName("__system_property_get", true);
+        MemoryBlock block = memory.malloc(0x10);
+        Number ret = __system_property_get.call(emulator, "ro.build.version.sdk", block.getPointer())[0];
+        System.out.println("sdk=" + new String(block.getPointer().getByteArray(0, ret.intValue())) + ", libc=" + memory.findModule("libc.so"));
     }
 
     private void destroy() throws IOException {
@@ -74,19 +78,25 @@ public class JniDispatch32 extends AbstractJni {
         IxHook xHook = XHookImpl.getInstance(emulator);
         xHook.register("libjnidispatch.so", "malloc", new ReplaceCallback() {
             @Override
-            public HookStatus onCall(Emulator emulator, long originFunction) {
-                int size = emulator.getContext().getIntArg(0);
+            public HookStatus onCall(Emulator<?> emulator, HookContext context, long originFunction) {
+                int size = context.getIntArg(0);
+                context.push(size);
                 System.out.println("malloc=" + size);
                 return HookStatus.RET(emulator, originFunction);
             }
-        });
+            @Override
+            public void postCall(Emulator<?> emulator, HookContext context) {
+                int size = context.pop();
+                System.out.println("malloc=" + size + ", ret=" + context.getPointerArg(0));
+            }
+        }, true);
         xHook.refresh();
 
         IWhale whale = Whale.getInstance(emulator);
         Symbol free = emulator.getMemory().findModule("libc.so").findSymbolByName("free");
-        whale.WInlineHookFunction(free, new ReplaceCallback() {
+        whale.inlineHookFunction(free, new ReplaceCallback() {
             @Override
-            public HookStatus onCall(Emulator emulator, long originFunction) {
+            public HookStatus onCall(Emulator<?> emulator, long originFunction) {
                 System.out.println("WInlineHookFunction free=" + emulator.getContext().getPointerArg(0));
                 return HookStatus.RET(emulator, originFunction);
             }
@@ -105,7 +115,7 @@ public class JniDispatch32 extends AbstractJni {
         Symbol newJavaString = module.findSymbolByName("newJavaString");
         hookZz.wrap(newJavaString, new WrapCallback<RegisterContext>() {
             @Override
-            public void preCall(Emulator emulator, RegisterContext ctx, HookEntryInfo info) {
+            public void preCall(Emulator<?> emulator, RegisterContext ctx, HookEntryInfo info) {
                 Pointer value = ctx.getPointerArg(1);
                 Pointer encoding = ctx.getPointerArg(2);
                 System.out.println("newJavaString value=" + value.getString(0) + ", encoding=" + encoding.getString(0));
@@ -130,7 +140,7 @@ public class JniDispatch32 extends AbstractJni {
     }
 
     @Override
-    public DvmObject callStaticObjectMethod(BaseVM vm, DvmClass dvmClass, String signature, VarArg varArg) {
+    public DvmObject<?> callStaticObjectMethod(BaseVM vm, DvmClass dvmClass, String signature, VarArg varArg) {
         if ("java/lang/System->getProperty(Ljava/lang/String;)Ljava/lang/String;".equals(signature)) {
             StringObject string = varArg.getObject(0);
             return new StringObject(vm, System.getProperty(string.getValue()));
